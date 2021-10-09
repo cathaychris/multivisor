@@ -116,5 +116,8 @@ export const nullProcess = {
   stderr_logfile: null,
   start: 0,
   now: 0,
-  gui_url: ''
+  circus_id: -1,
+  gui_url: '',
+  gui_name: '',
+  gui_desc: ''
 }
