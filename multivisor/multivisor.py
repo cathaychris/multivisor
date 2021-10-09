@@ -245,7 +245,7 @@ class Process(dict):
         self["supervisor"] = supervisor_name
         self["host"] = supervisor["host"]
         self["uid"] = uid
-        self["gui_url"] = self.get_gui_url()
+        self["circus_id"], self["gui_url"], self["gui_name"], self["gui_desc"] = self.get_circus_info()
 
     @property
     def server(self):
@@ -255,13 +255,14 @@ class Process(dict):
     def full_name(self):
         return self["full_name"]
 
-    def get_gui_url(self):
+    def get_circus_info(self):
         try:
-            response = requests.post('http://circus.lab/services/supervisor',
-                json={'host': self["host"], 'process': self["name"]})
-            return response.json()
+            j = requests.post('http://circus.lab/services/supervisor',
+                json={'host': self["host"], 'process': self["name"]}).json()
+            j2 = requests.get(f"http://circus.lab/services/{j['id']}").json()
+            return j['id'], j['url'], j2['name'], j2['description']
         except: # JSON error (no process) or can't communicate with server
-            return ''
+            return -1, '', '', ''
 
     def handle_event(self, event):
         event_name = event["eventname"]
