@@ -7,7 +7,7 @@
       </v-checkbox>
     </td>
     <td class="px-0" style="height:30px;">
-      {{ process.name }}
+      <ProcessCircusTitle :process="process"></ProcessCircusTitle>
     </td>
     <td v-if="showGroup" class="hidden-xs-only px-0" style="height:30px;">
         {{ row.item.group }}
@@ -58,10 +58,12 @@
 
 <script>
 import { stateColorMap } from '../../multivisor'
+import ProcessCircusTitle from '../process/CircusTitle'
 
 export default {
   name: 'ProcessRow',
   props: [ 'row', 'show-supervisor', 'show-group' ],
+  components: {ProcessCircusTitle},
   data () { return { stateColorMap: stateColorMap } },
   computed: {
     process () { return this.row.item },

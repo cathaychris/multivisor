@@ -12,7 +12,7 @@ module.exports = {
     assetsPublicPath: '/',
     proxyTable: {
       '/api': {
-        target: 'http://localhost:22000',
+        target: 'http://b108-rpi-server.lab:22000',
         debug: true
       }
     },

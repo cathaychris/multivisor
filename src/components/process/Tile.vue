@@ -5,7 +5,9 @@
                   :value="process.uid"></v-checkbox>
     </v-list-tile-action>
     <v-list-tile-content>
-      <v-list-tile-title>{{ process.name }}</v-list-tile-title>
+      <v-list-tile-title>
+        <ProcessCircusTitle :process="process"></ProcessCircusTitle>
+      </v-list-tile-title>
     </v-list-tile-content>
 
     <v-list-tile-action>
@@ -46,12 +48,14 @@
 
 <script>
 import ProcessState from '../process/State'
+import ProcessCircusTitle from '../process/CircusTitle'
 
 export default {
   name: 'ProcessTitle',
   props: ['process'],
   components: {
-    ProcessState
+    ProcessState,
+    ProcessCircusTitle
   },
   computed: {
     selectedProcesses: {

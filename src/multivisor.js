@@ -115,5 +115,6 @@ export const nullProcess = {
   logfile: null,
   stderr_logfile: null,
   start: 0,
-  now: 0
+  now: 0,
+  gui_url: ''
 }
