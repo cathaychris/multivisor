@@ -4,7 +4,8 @@ import logging
 import os
 import time
 import weakref
-import requests
+import json
+# import requests
 
 from blinker import signal
 
@@ -245,7 +246,7 @@ class Process(dict):
         self["supervisor"] = supervisor_name
         self["host"] = supervisor["host"]
         self["uid"] = uid
-        self["circus_id"], self["gui_url"], self["gui_name"], self["gui_desc"] = self.get_circus_info()
+        self["circus_id"], self["gui_url"], self["gui_name"], self["gui_desc"] = self.get_instrument_info()
 
     @property
     def server(self):
@@ -255,13 +256,16 @@ class Process(dict):
     def full_name(self):
         return self["full_name"]
 
-    def get_circus_info(self):
+    def get_instrument_info(self):
         try:
-            j = requests.post('http://circus.lab/services/supervisor',
-                json={'host': self["host"], 'process': self["name"]}).json()
-            j2 = requests.get(f"http://circus.lab/services/{j['id']}").json()
-            return j['id'], j['url'], j2['name'], j2['description']
+            with open('/home/miraex/code/supervisor_config/conf/instruments.json', 'r') as instruments:
+                instrument_data = json.load(instruments)
+            for line in instrument_data:
+                if (line['host'] == self["host"]) and (line['process'] == self["name"]):
+                    return line['id'], line['url'], line['name'], line['description']
+            raise Exception(f'Process {self["name"]} on host {self["host"]} not found in instruments.json')
         except: # JSON error (no process) or can't communicate with server
+            # raise  # uncomment to prevent multivisor from starting if instrument specs not present
             return -1, '', '', ''
 
     def handle_event(self, event):
