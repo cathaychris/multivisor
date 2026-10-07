@@ -24,6 +24,96 @@ from .util import sanitize_url, filter_patterns, parse_obj
 log = logging.getLogger("multivisor")
 
 
+DEFAULT_INSTRUMENTS_PATH = "/home/miraex/code/supervisor_config/conf/instruments.json"
+
+
+class InstrumentRegistry(object):
+    """
+    Maps (supervisor, host, process) to GUI link info. Reads either the
+    legacy instruments.json list (joined on host + process) or a registry.json
+    dict {"version": 1, "services": {...}} (joined on supervisor + process).
+    The file is cached and re-read only when its mtime changes.
+    """
+
+    def __init__(self):
+        self.path = None
+        self.registry_url = None
+        self._mtime = None
+        self._path_loaded = None
+        self._legacy = []
+        self._services = []
+
+    def configure(self, config_file=None, config=None):
+        """(Re)configure the file location from the multivisor config"""
+        config = config or {}
+        path = config.get("instruments") or os.environ.get("MULTIVISOR_INSTRUMENTS")
+        if path:
+            path = os.path.expanduser(path)
+            if not os.path.isabs(path) and config_file:
+                path = os.path.join(os.path.dirname(os.path.abspath(config_file)), path)
+        else:
+            path = DEFAULT_INSTRUMENTS_PATH
+        self.path = path
+        self.registry_url = config.get("registry_url") or None
+
+    def _load(self):
+        path = self.path or DEFAULT_INSTRUMENTS_PATH
+        try:
+            mtime = os.stat(path).st_mtime
+        except OSError as err:
+            mtime = None
+            error = "cannot stat %s: %s" % (path, err)
+        else:
+            error = None
+        if path == self._path_loaded and mtime == self._mtime:
+            return
+        self._path_loaded, self._mtime = path, mtime
+        self._legacy, self._services = [], []
+        if error is None:
+            try:
+                with open(path, "r") as fobj:
+                    data = json.load(fobj)
+                if isinstance(data, dict):
+                    self._services = list(data.get("services", {}).values())
+                else:
+                    self._legacy = list(data)
+            except (IOError, OSError, ValueError, TypeError, AttributeError) as err:
+                error = "cannot load %s: %s" % (path, err)
+        if error:  # logged once per (path, mtime)
+            logging.warning("instruments: %s", error)
+
+    @staticmethod
+    def _service_url(svc):
+        if svc.get("url"):
+            return svc["url"]
+        host, port = svc.get("host"), svc.get("port")
+        if host and port:
+            return "http://%s:%s" % (host, port)
+        return ""
+
+    def lookup(self, supervisor, host, process):
+        self._load()
+        for svc in self._services:
+            if svc.get("supervisor") == supervisor and svc.get("process") == process:
+                port = svc.get("port")
+                return (
+                    port if port is not None else -1,
+                    self._service_url(svc),
+                    svc.get("name", ""),
+                    svc.get("description", ""),
+                )
+        for line in self._legacy:
+            try:
+                if line["host"] == host and line["process"] == process:
+                    return line["id"], line["url"], line["name"], line["description"]
+            except (KeyError, TypeError):
+                continue
+        return -1, "", "", ""
+
+
+instrument_registry = InstrumentRegistry()
+
+
 class Supervisor(dict):
 
     Null = {
@@ -246,7 +336,7 @@ class Process(dict):
         self["supervisor"] = supervisor_name
         self["host"] = supervisor["host"]
         self["uid"] = uid
-        self["circus_id"], self["gui_url"], self["gui_name"], self["gui_desc"] = self.get_instrument_info()
+        self._update_gui_info()
 
     @property
     def server(self):
@@ -257,16 +347,14 @@ class Process(dict):
         return self["full_name"]
 
     def get_instrument_info(self):
-        try:
-            with open('/home/miraex/code/supervisor_config/conf/instruments.json', 'r') as instruments:
-                instrument_data = json.load(instruments)
-            for line in instrument_data:
-                if (line['host'] == self["host"]) and (line['process'] == self["name"]):
-                    return line['id'], line['url'], line['name'], line['description']
-            raise Exception(f'Process {self["name"]} on host {self["host"]} not found in instruments.json')
-        except: # JSON error (no process) or can't communicate with server
-            # raise  # uncomment to prevent multivisor from starting if instrument specs not present
-            return -1, '', '', ''
+        """Return (circus_id, gui_url, gui_name, gui_desc) for this process"""
+        return instrument_registry.lookup(
+            self.get("supervisor"), self.get("host"), self.get("name")
+        )
+
+    def _update_gui_info(self):
+        info = self.get_instrument_info()
+        self["circus_id"], self["gui_url"], self["gui_name"], self["gui_desc"] = info
 
     def handle_event(self, event):
         event_name = event["eventname"]
@@ -297,6 +385,9 @@ class Process(dict):
         old = dict(self)
         proc_info["running"] = proc_info["state"] in RUNNING_STATES
         self.update(proc_info)
+        # event/refresh payloads carry no gui_* fields: re-resolve them
+        # (cheap: the registry file is cached by mtime)
+        self._update_gui_info()
         return old
 
     def refresh(self):
@@ -350,6 +441,7 @@ def load_config(config_file):
     supervisors = {}
     config = dict(dft_global, supervisors=supervisors)
     config.update(parser.items("global"))
+    instrument_registry.configure(config_file, config)
     tasks = []
     for section in parser.sections():
         if not section.startswith("supervisor:"):

@@ -34,6 +34,13 @@ def reload():
     return "OK"
 
 
+@app.route("/api/registry_url")
+@login_required(app)
+def registry_url():
+    # [global] registry_url=...; not displayed by the bundled UI (needs a rebuild)
+    return jsonify({"registry_url": app.multivisor.config.get("registry_url")})
+
+
 @app.route("/api/refresh")
 @login_required(app)
 def refresh():
